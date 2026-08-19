@@ -46,6 +46,14 @@ TEXT_HEURISTIC = os.environ.get("REFUSAL_TEXT_HEURISTIC", "0") in {"1", "true", 
 app = FastAPI()
 
 
+@app.middleware("http")
+async def _log_every_request(request: Request, call_next):
+    print(f"IN {request.method} {request.url.path} qs={request.url.query!r}")
+    response = await call_next(request)
+    print(f"OUT {response.status_code} {request.method} {request.url.path}")
+    return response
+
+
 def _require_config() -> None:
     if not OPENROUTER_MODEL:
         raise RuntimeError("OPENROUTER_MODEL is unset. Set it in .env — this process will not pick a model.")
@@ -65,6 +73,43 @@ async def startup() -> None:
 @app.get("/health")
 async def health():
     return {"status": "ok", "openrouter_model": OPENROUTER_MODEL, "local_model": LOCAL_MODEL}
+
+
+@app.get("/v1/responses")
+@app.get("/v1/responses/")
+@app.get("/responses")
+@app.get("/responses/")
+async def get_responses():
+    """Codex probes this URL. POST is the real create; GET must not 404."""
+    return {"object": "list", "data": []}
+
+
+@app.get("/v1/models")
+@app.get("/models")
+async def list_models():
+    """Codex looks here for model metadata. One OpenRouter id + the local path."""
+    now = 0
+    return {
+        "object": "list",
+        "data": [
+            {
+                "id": OPENROUTER_MODEL,
+                "object": "model",
+                "created": now,
+                "owned_by": "openrouter",
+                "context_window": 128000,
+                "max_output_tokens": 8192,
+            },
+            {
+                "id": LOCAL_MODEL,
+                "object": "model",
+                "created": now,
+                "owned_by": "local",
+                "context_window": 262144,
+                "max_output_tokens": 8192,
+            },
+        ],
+    }
 
 
 async def _openrouter_chat(oai_body: dict) -> tuple[int | None, dict | None, BaseException | None]:
@@ -211,13 +256,20 @@ async def _local_responses(body: dict, *, stream: bool):
 
 
 @app.post("/v1/responses")
+@app.post("/v1/responses/")
 @app.post("/responses")
+@app.post("/responses/")
 async def responses(request: Request):
     _require_config()
     body = await request.json()
     if not isinstance(body, dict):
         return JSONResponse({"error": {"message": "body must be object"}}, status_code=400)
     stream = bool(body.get("stream"))
+    tool_names: list[str] = []
+    for tool in body.get("tools") or []:
+        if isinstance(tool, dict):
+            tool_names.append(str(tool.get("name") or tool.get("type") or "?"))
+    print(f"responses tools n={len(tool_names)} names={tool_names[:40]}")
 
     status, or_body, err = await _openrouter_responses(body)
     fallback = is_refusal(status, or_body, err, text_heuristic=TEXT_HEURISTIC)

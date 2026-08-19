@@ -1,0 +1,51 @@
+{
+  "models": [
+    {
+      "slug": "deepseek/deepseek-v4-pro-0813",
+      "display_name": "DeepSeek V4 Pro (OpenRouter)",
+      "description": "User-selected OpenRouter fast path for this sandbox. Function-tool shape (GPT-5.5), not GPT-5.6 code_mode_only.",
+      "default_reasoning_level": "medium",
+      "supported_reasoning_levels": [
+        {"effort": "low", "description": "Fast responses"},
+        {"effort": "medium", "description": "Default"},
+        {"effort": "high", "description": "Harder tasks"}
+      ],
+      "shell_type": "shell_command",
+      "visibility": "list",
+      "supported_in_api": true,
+      "priority": 1,
+      "additional_speed_tiers": [],
+      "service_tiers": [],
+      "availability_nux": null,
+      "upgrade": null,
+      "base_instructions": "You are a coding agent on this Mac. You have a local shell (exec / shell_command) and apply_patch. Use exec with a cmd string to inspect files (rg, grep, find, ls, pwd). Use apply_patch to edit. Do not spawn sub-agents. Do not use web search for local files. Do not claim to be GPT-5 or Opus.",
+      "model_messages": {
+        "instructions_template": "You are a coding agent on this Mac. You have a local shell (exec / shell_command) and apply_patch. Use exec with a cmd string to inspect files (rg, grep, find, ls, pwd). Use apply_patch to edit. Do not spawn sub-agents. Do not use web search for local files. Do not claim to be GPT-5 or Opus.",
+        "instructions_variables": null,
+        "approvals": null,
+        "collaboration_modes": null,
+        "auto_review": null,
+        "permissions": null
+      },
+      "include_skills_usage_instructions": true,
+      "include_plugin_usage_instructions": true,
+      "include_apps_usage_instructions": false,
+      "default_reasoning_summary": "none",
+      "support_verbosity": true,
+      "default_verbosity": "low",
+      "apply_patch_tool_type": "freeform",
+      "web_search_tool_type": "text",
+      "truncation_policy": {"mode": "tokens", "limit": 10000},
+      "supports_parallel_tool_calls": true,
+      "supports_image_detail_original": false,
+      "context_window": 128000,
+      "max_context_window": 128000,
+      "comp_hash": "dsv4pro0813",
+      "effective_context_window_percent": 95,
+      "experimental_supported_tools": [],
+      "input_modalities": ["text"],
+      "supports_search_tool": false,
+      "use_responses_lite": false
+    }
+  ]
+}

@@ -2,9 +2,6 @@
 # Hybrid router: OpenRouter first, compressed local MLX on refusal.
 set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-# shellcheck source=paths.sh
-source "${SCRIPT_DIR}/paths.sh"
-
 if [[ ! -f "${SCRIPT_DIR}/.env" ]]; then
   echo "FAIL: ${SCRIPT_DIR}/.env missing. Copy .env.example and set OPENROUTER_API_KEY." >&2
   exit 1
@@ -13,6 +10,9 @@ fi
 set -a
 source "${SCRIPT_DIR}/.env"
 set +a
+# shellcheck source=paths.sh
+source "${SCRIPT_DIR}/paths.sh"
+export LOCAL_MODEL="${LOCAL_MODEL:-${MODEL_DIR}}"
 
 if [[ -z "${OPENROUTER_MODEL:-}" ]]; then
   echo "FAIL: OPENROUTER_MODEL unset in .env" >&2

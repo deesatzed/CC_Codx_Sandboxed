@@ -1,0 +1,5 @@
+{
+  "name": "user-commands",
+  "description": "Mirror of ~/.claude/commands for this sandboxed session",
+  "version": "1.0.0"
+}

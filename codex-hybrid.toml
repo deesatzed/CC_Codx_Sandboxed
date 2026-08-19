@@ -1,10 +1,27 @@
 # Isolated Codex user config (copied to .codex-home/config.toml at launch).
 # Does NOT edit ~/.codex/config.toml.
 # Codex 0.147 requires wire_api = "responses" for custom providers.
+#
+# Catalog must be GPT-5.5-shaped (no tool_mode=code_mode_only). That flag is
+# for official GPT-5.6 models and hides exec from OpenRouter third-party models.
 
 model = "deepseek/deepseek-v4-pro-0813"
 model_provider = "hybrid"
+model_context_window = 128000
+# Rewritten to an absolute path by run-codex.sh for this checkout.
+model_catalog_json = "model-catalog.json"
 sandbox_mode = "danger-full-access"
+approval_policy = "never"
+web_search = "disabled"
+
+[features]
+unified_exec = true
+shell_tool = true
+code_mode = false
+code_mode_only = false
+collaboration_modes = false
+multi_agent = false
+multi_agent_v2 = false
 
 [model_providers.hybrid]
 name = "hybrid-router"

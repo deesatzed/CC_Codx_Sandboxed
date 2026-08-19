@@ -62,16 +62,115 @@ def wrap_chat_as_response(chat: dict[str, Any], *, model: str) -> dict[str, Any]
 
 
 def responses_to_sse(resp: dict[str, Any]) -> str:
-    text = extract_output_text(resp)
+    """Replay a completed Responses object as the event sequence Codex expects.
+
+    Codex errors with 'OutputTextDelta without active item' if we emit
+    output_text.delta before output_item.added.
+    """
     chunks: list[str] = []
 
     def event(name: str, data: dict[str, Any]) -> None:
         chunks.append(f"event: {name}\ndata: {json.dumps(data)}\n\n")
 
-    event("response.created", {"type": "response.created", "response": {**resp, "status": "in_progress", "output": []}})
-    event(
-        "response.output_text.delta",
-        {"type": "response.output_text.delta", "delta": text},
-    )
+    skeleton = {**resp, "status": "in_progress", "output": []}
+    event("response.created", {"type": "response.created", "response": skeleton})
+    event("response.in_progress", {"type": "response.in_progress", "response": skeleton})
+
+    items = [i for i in (resp.get("output") or []) if isinstance(i, dict)]
+    if not items:
+        text = extract_output_text(resp)
+        items = [
+            {
+                "id": "msg_local",
+                "type": "message",
+                "role": "assistant",
+                "status": "completed",
+                "content": [{"type": "output_text", "text": text}],
+            }
+        ]
+
+    for output_index, item in enumerate(items):
+        event(
+            "response.output_item.added",
+            {
+                "type": "response.output_item.added",
+                "output_index": output_index,
+                "item": {**item, "status": item.get("status") or "in_progress"},
+            },
+        )
+        if item.get("type") == "function_call":
+            args = item.get("arguments") or ""
+            event(
+                "response.function_call_arguments.delta",
+                {
+                    "type": "response.function_call_arguments.delta",
+                    "output_index": output_index,
+                    "delta": args,
+                },
+            )
+            event(
+                "response.function_call_arguments.done",
+                {
+                    "type": "response.function_call_arguments.done",
+                    "output_index": output_index,
+                    "arguments": args,
+                },
+            )
+
+        content = item.get("content")
+        if isinstance(content, list):
+            for content_index, part in enumerate(content):
+                if not isinstance(part, dict):
+                    continue
+                start_part = dict(part)
+                if start_part.get("type") in {"output_text", "text"}:
+                    start_part["text"] = ""
+                event(
+                    "response.content_part.added",
+                    {
+                        "type": "response.content_part.added",
+                        "output_index": output_index,
+                        "content_index": content_index,
+                        "part": start_part,
+                    },
+                )
+                text = part.get("text") or ""
+                if part.get("type") in {"output_text", "text"} and text:
+                    event(
+                        "response.output_text.delta",
+                        {
+                            "type": "response.output_text.delta",
+                            "output_index": output_index,
+                            "content_index": content_index,
+                            "delta": text,
+                        },
+                    )
+                    event(
+                        "response.output_text.done",
+                        {
+                            "type": "response.output_text.done",
+                            "output_index": output_index,
+                            "content_index": content_index,
+                            "text": text,
+                        },
+                    )
+                event(
+                    "response.content_part.done",
+                    {
+                        "type": "response.content_part.done",
+                        "output_index": output_index,
+                        "content_index": content_index,
+                        "part": part,
+                    },
+                )
+        event(
+            "response.output_item.done",
+            {
+                "type": "response.output_item.done",
+                "output_index": output_index,
+                "item": item,
+            },
+        )
+
     event("response.completed", {"type": "response.completed", "response": resp})
     return "".join(chunks)

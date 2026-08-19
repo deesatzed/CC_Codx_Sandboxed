@@ -3,6 +3,12 @@
 # This process is NOT sandboxed; it must read ../models/.
 set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+if [[ -f "${SCRIPT_DIR}/.env" ]]; then
+  # shellcheck disable=SC1091
+  set -a
+  source "${SCRIPT_DIR}/.env"
+  set +a
+fi
 # shellcheck source=paths.sh
 source "${SCRIPT_DIR}/paths.sh"
 

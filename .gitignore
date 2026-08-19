@@ -2,8 +2,12 @@
 .DS_Store
 # Runtime mirror of ~/.claude/commands — copied by run-claude.sh
 .claude/commands/
-# Isolated Codex home (sessions, logs). Template is codex-hybrid.toml.
+# Isolated Codex home (sessions, logs, API keys in shell snapshots).
 .codex-home/
+# Local scan/demo copies of other repos (each has its own .git).
+repoShowP1/
+# Generated Graphify map
+graphify-out/
 __pycache__/
 .pytest_cache/
 *.pyc

@@ -3,6 +3,12 @@
 # Isolated CODEX_HOME so this does not change ~/.codex/config.toml.
 set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+if [[ -f "${SCRIPT_DIR}/.env" ]]; then
+  # shellcheck disable=SC1091
+  set -a
+  source "${SCRIPT_DIR}/.env"
+  set +a
+fi
 # shellcheck source=paths.sh
 source "${SCRIPT_DIR}/paths.sh"
 
@@ -16,13 +22,9 @@ if ! command -v codex >/dev/null; then
 fi
 
 if [[ ! -f "${SCRIPT_DIR}/.env" ]]; then
-  echo "FAIL: .env missing" >&2
+  echo "FAIL: .env missing. Copy .env.example and set OPENROUTER_API_KEY." >&2
   exit 1
 fi
-# shellcheck disable=SC1091
-set -a
-source "${SCRIPT_DIR}/.env"
-set +a
 
 if [[ -z "${OPENROUTER_API_KEY:-}" ]]; then
   echo "FAIL: OPENROUTER_API_KEY unset in .env" >&2
@@ -41,6 +43,10 @@ fi
 CODEX_HOME_DIR="${SCRIPT_DIR}/.codex-home"
 mkdir -p "${CODEX_HOME_DIR}/prompts"
 cp "${SCRIPT_DIR}/codex-hybrid.toml" "${CODEX_HOME_DIR}/config.toml"
+# Codex resolves this path as-is; pin it to this checkout (second Mac / moved folder).
+sed -i.bak "s|^model_catalog_json = .*|model_catalog_json = \"${SCRIPT_DIR}/model-catalog.json\"|" \
+  "${CODEX_HOME_DIR}/config.toml"
+rm -f "${CODEX_HOME_DIR}/config.toml.bak"
 
 USER_COMMANDS="${HOME}/.claude/commands"
 if [[ -d "$USER_COMMANDS" ]]; then
@@ -63,6 +69,16 @@ CODEX_BIN="$(dirname "$(command -v codex)")"
 ENV_FILE="$(mktemp)"
 cat > "$ENV_FILE" <<EOF
 export PATH="${CODEX_BIN}:${NODE_BIN}:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin"
+export HOME="${HOME}"
+export USER="${USER}"
+export LOGNAME="${USER}"
+export SHELL="/bin/zsh"
+export TMPDIR="/tmp"
+export TMP="/tmp"
+export TERM="${TERM:-xterm-256color}"
+export LANG="${LANG:-en_US.UTF-8}"
+export PWD="${SCRIPT_DIR}"
+export OLDPWD="${SCRIPT_DIR}"
 export CODEX_HOME="${CODEX_HOME_DIR}"
 export OPENROUTER_API_KEY="${OPENROUTER_API_KEY}"
 export OPENROUTER_MODEL="${OPENROUTER_MODEL}"
@@ -81,9 +97,17 @@ cleanup() { rm -f "$ENV_FILE"; }
 trap cleanup EXIT
 
 # Safehouse is the OS box. Codex's own sandbox is disabled so they do not fight.
+# Do not --env-pass TMPDIR: the host value is /var/folders/... and a previous
+# launcher overwrite made child shells leave the granted workdir temp.
+# Process cwd must be SCRIPT_DIR: Safehouse --workdir grants that path; getcwd
+# / `ls .` fail if Codex is started from an ungranted directory.
+cd "$SCRIPT_DIR"
 exec safehouse \
   --workdir "$SCRIPT_DIR" \
   --add-dirs-ro "${HOME}/.nvm" \
   --add-dirs-ro "${HOME}/.local" \
+  --add-dirs "/tmp" \
   --env="$ENV_FILE" \
-  -- codex --dangerously-bypass-approvals-and-sandbox -C "$SCRIPT_DIR"
+  --env-pass HOME,USER,LOGNAME,TERM,LANG \
+  --enable process-control \
+  -- /bin/zsh -c "cd $(printf '%q' "$SCRIPT_DIR") && exec codex --dangerously-bypass-approvals-and-sandbox -C $(printf '%q' "$SCRIPT_DIR")"
