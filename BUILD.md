@@ -41,6 +41,14 @@ If `brew install eugene1g/safehouse/agent-safehouse` fails on Xcode, `setup.sh` 
 
 Pass: prints `check passed (no 27B load)`.
 
+## 4b. Hybrid router (OpenRouter first)
+
+- [ ] Copy `.env.example` → `.env`
+- [ ] Set `OPENROUTER_API_KEY` (you paste it; this repo does not copy keys)
+- [ ] Confirm `OPENROUTER_MODEL=deepseek/deepseek-v4-pro-0813`
+- [ ] `./run-router.sh` (Terminal 2) then `./run-claude.sh` (Terminal 3)
+- [ ] Keep `./run-mlx.sh` for refusal fallback
+
 ## 5. Live server (explicit; spends RAM on the 27B 4bit)
 
 Terminal 1:
