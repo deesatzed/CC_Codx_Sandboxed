@@ -1,0 +1,13 @@
+# Isolated Codex user config (copied to .codex-home/config.toml at launch).
+# Does NOT edit ~/.codex/config.toml.
+# Codex 0.147 requires wire_api = "responses" for custom providers.
+
+model = "deepseek/deepseek-v4-pro-0813"
+model_provider = "hybrid"
+sandbox_mode = "danger-full-access"
+
+[model_providers.hybrid]
+name = "hybrid-router"
+base_url = "http://127.0.0.1:4000/v1"
+env_key = "OPENROUTER_API_KEY"
+wire_api = "responses"

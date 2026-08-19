@@ -2,6 +2,7 @@
 """Claude Code → OpenRouter first; on defined refusal, compressed local MLX."""
 from __future__ import annotations
 
+import json
 import os
 from pathlib import Path
 
@@ -11,6 +12,7 @@ from fastapi.responses import JSONResponse, Response, StreamingResponse
 
 from anthropic_openai import anthropic_to_sse, openai_chat_to_anthropic, to_openai_chat
 from refusal import is_refusal
+from responses_bridge import compress_responses_for_local, responses_to_sse, wrap_chat_as_response
 from shorthand import compress_for_local
 
 
@@ -142,6 +144,94 @@ async def messages(request: Request):
     if stream:
         return Response(content=anthropic_to_sse(msg), media_type="text/event-stream")
     return JSONResponse(msg)
+
+
+def _or_headers() -> dict[str, str]:
+    return {
+        "Authorization": f"Bearer {OPENROUTER_API_KEY}",
+        "Content-Type": "application/json",
+        "X-Title": "claude-mlx-sandbox",
+    }
+
+
+async def _openrouter_responses(body: dict) -> tuple[int | None, dict | None, BaseException | None]:
+    payload = dict(body)
+    payload["model"] = OPENROUTER_MODEL
+    payload["stream"] = False
+    try:
+        async with httpx.AsyncClient(timeout=120) as client:
+            resp = await client.post(
+                f"{OPENROUTER_BASE_URL}/responses",
+                json=payload,
+                headers=_or_headers(),
+            )
+            try:
+                data = resp.json()
+            except Exception:
+                data = {"error": {"message": resp.text[:500]}}
+            if not isinstance(data, dict):
+                data = {"error": {"message": "non-object json"}}
+            return resp.status_code, data, None
+    except BaseException as exc:
+        return None, None, exc
+
+
+async def _local_responses(body: dict, *, stream: bool):
+    compressed = compress_responses_for_local(body, local_model=LOCAL_MODEL)
+    compressed["stream"] = False
+    headers = {"content-type": "application/json", "authorization": "Bearer local-secret"}
+    async with httpx.AsyncClient(timeout=600) as client:
+        resp = await client.post(f"{MLX_URL}/v1/responses", json=compressed, headers=headers)
+        try:
+            data = resp.json()
+        except Exception:
+            data = None
+        if resp.status_code >= 400 or not isinstance(data, dict) or data.get("error"):
+            # Fall back to chat completions if mlx Responses is unhappy.
+            inp = compressed.get("input")
+            text = inp if isinstance(inp, str) else json.dumps(inp)
+            chat_body = {
+                "model": LOCAL_MODEL,
+                "messages": [
+                    {"role": "system", "content": compressed.get("instructions") or ""},
+                    {"role": "user", "content": text},
+                ],
+                "max_tokens": 2048,
+                "stream": False,
+            }
+            chat = await client.post(f"{MLX_URL}/v1/chat/completions", json=chat_body, headers=headers)
+            try:
+                chat_json = chat.json()
+            except Exception:
+                chat_json = {"choices": [{"message": {"content": chat.text[:500]}}]}
+            data = wrap_chat_as_response(chat_json if isinstance(chat_json, dict) else {}, model=LOCAL_MODEL)
+    if stream:
+        return Response(content=responses_to_sse(data), media_type="text/event-stream")
+    return JSONResponse(data)
+
+
+@app.post("/v1/responses")
+@app.post("/responses")
+async def responses(request: Request):
+    _require_config()
+    body = await request.json()
+    if not isinstance(body, dict):
+        return JSONResponse({"error": {"message": "body must be object"}}, status_code=400)
+    stream = bool(body.get("stream"))
+
+    status, or_body, err = await _openrouter_responses(body)
+    fallback = is_refusal(status, or_body, err, text_heuristic=TEXT_HEURISTIC)
+    if isinstance(or_body, dict) and or_body.get("status") in {"failed", "cancelled"}:
+        fallback = True
+    via = "local" if fallback else "openrouter"
+    print(f"responses hop via={via} or_status={status} err={type(err).__name__ if err else None}")
+
+    if fallback:
+        return await _local_responses(body, stream=stream)
+
+    if stream:
+        return Response(content=responses_to_sse(or_body or {}), media_type="text/event-stream")
+    return JSONResponse(or_body or {})
 
 
 if __name__ == "__main__":

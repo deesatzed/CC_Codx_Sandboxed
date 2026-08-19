@@ -1,5 +1,9 @@
 .env
 .DS_Store
+# Runtime mirror of ~/.claude/commands — copied by run-claude.sh
+.claude/commands/
+# Isolated Codex home (sessions, logs). Template is codex-hybrid.toml.
+.codex-home/
 __pycache__/
 .pytest_cache/
 *.pyc
