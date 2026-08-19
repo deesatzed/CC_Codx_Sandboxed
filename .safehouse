@@ -1,0 +1,5 @@
+# Safehouse project config.
+# run-claude.sh passes --workdir explicitly; this file is the local record.
+
+# Claude may only read/write this directory (the sandbox).
+# The MLX server process is started outside Safehouse and reads ../models/.
