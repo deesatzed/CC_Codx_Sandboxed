@@ -14,6 +14,41 @@ _STOP = {"content_filter", "refusal"}
 _ERR_NEEDLES = ("moderation", "policy", "content_filter", "content-filter")
 
 
+def classify_refusal(
+    status: int | None,
+    body: dict | None,
+    error: BaseException | None,
+    *,
+    text_heuristic: bool = False,
+) -> str | None:
+    """Return R1/R2/R3/R4 or None. None means use OpenRouter's answer."""
+    if error is not None:
+        return "R1"
+    if status is not None and (status in _R1_STATUS or status >= 500):
+        return "R1"
+    if not isinstance(body, dict):
+        return None
+    err = body.get("error")
+    if isinstance(err, dict):
+        blob = f"{err.get('type', '')} {err.get('code', '')} {err.get('message', '')}".lower()
+        if any(n in blob for n in _ERR_NEEDLES):
+            return "R2"
+    if body.get("stop_reason") in _STOP:
+        return "R3"
+    if body.get("status") in {"failed", "cancelled"}:
+        return "R1"
+    choices = body.get("choices")
+    if isinstance(choices, list) and choices:
+        finish = choices[0].get("finish_reason") if isinstance(choices[0], dict) else None
+        if finish in _STOP:
+            return "R3"
+    if text_heuristic:
+        text = _assistant_text(body).lower()
+        if text.startswith("i cannot") or "against my guidelines" in text:
+            return "R4"
+    return None
+
+
 def is_refusal(
     status: int | None,
     body: dict | None,
@@ -21,29 +56,7 @@ def is_refusal(
     *,
     text_heuristic: bool = False,
 ) -> bool:
-    if error is not None:
-        return True
-    if status is not None and (status in _R1_STATUS or status >= 500):
-        return True
-    if not isinstance(body, dict):
-        return False
-    err = body.get("error")
-    if isinstance(err, dict):
-        blob = f"{err.get('type', '')} {err.get('code', '')} {err.get('message', '')}".lower()
-        if any(n in blob for n in _ERR_NEEDLES):
-            return True
-    if body.get("stop_reason") in _STOP:
-        return True
-    choices = body.get("choices")
-    if isinstance(choices, list) and choices:
-        finish = choices[0].get("finish_reason") if isinstance(choices[0], dict) else None
-        if finish in _STOP:
-            return True
-    if text_heuristic:
-        text = _assistant_text(body).lower()
-        if text.startswith("i cannot") or "against my guidelines" in text:
-            return True
-    return False
+    return classify_refusal(status, body, error, text_heuristic=text_heuristic) is not None
 
 
 def _assistant_text(body: dict) -> str:

@@ -1,4 +1,4 @@
-from refusal import is_refusal
+from refusal import classify_refusal, is_refusal
 
 
 def test_http_429_is_refusal():
@@ -38,6 +38,12 @@ def test_error_body_moderation_is_refusal():
 
 def test_transport_error_is_refusal():
     assert is_refusal(None, None, OSError("connection refused")) is True
+
+
+def test_classify_codes_match_is_refusal():
+    assert classify_refusal(429, None, None) == "R1"
+    assert is_refusal(429, None, None) is True
+    assert classify_refusal(200, {"choices": [{"finish_reason": "stop"}]}, None) is None
 
 
 def test_text_heuristic_off_does_not_trip_on_i_cannot():

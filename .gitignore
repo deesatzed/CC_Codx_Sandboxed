@@ -8,6 +8,11 @@
 repoShowP1/
 # Generated Graphify map
 graphify-out/
+# Live tapes (may include user task text)
+receipts/*.jsonl
+witness.jsonl
+.force-local
+.prove-inside.txt
 __pycache__/
 .pytest_cache/
 *.pyc

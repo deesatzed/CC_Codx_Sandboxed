@@ -62,6 +62,10 @@ for p in src.rglob("*.md"):
 print("prompts", len(list(dest.glob("*.md"))))
 PY
 fi
+if [[ -f "${SCRIPT_DIR}/slash/local.md" ]]; then
+  cp "${SCRIPT_DIR}/slash/local.md" "${CODEX_HOME_DIR}/prompts/local.md"
+fi
+(cd "$SCRIPT_DIR" && "$VENV_PY" -c "from witness import append_witness; append_witness(host='codex', event='session_start', path='.')") || true
 
 NODE_BIN="$(dirname "$(command -v node)")"
 CODEX_BIN="$(dirname "$(command -v codex)")"

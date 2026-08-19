@@ -1,7 +1,12 @@
 """Lossy shrink of an Anthropic /v1/messages body for the local 27B only."""
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any
+
+from graph_context import compact_subgraph, last_user_text
+
+_ROOT = Path(__file__).resolve().parent
 
 _STUB = (
     "You are a local coding agent on this Mac. Use Anthropic tool_use blocks "
@@ -15,7 +20,8 @@ _TOOL_RESULT_MAX = 4000
 def compress_for_local(body: dict[str, Any], *, local_model: str) -> dict[str, Any]:
     out = dict(body)
     out["model"] = local_model
-    out["system"] = _STUB
+    graph = compact_subgraph(_ROOT / "graphify-out" / "graph.json", last_user_text(body))
+    out["system"] = _STUB + (("\n\n" + graph) if graph else "")
     if isinstance(body.get("tools"), list):
         out["tools"] = [_slim_tool(t) for t in body["tools"] if isinstance(t, dict)]
     if isinstance(body.get("messages"), list):

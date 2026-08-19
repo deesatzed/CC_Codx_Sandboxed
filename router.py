@@ -11,9 +11,13 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse, Response, StreamingResponse
 
 from anthropic_openai import anthropic_to_sse, openai_chat_to_anthropic, to_openai_chat
-from refusal import is_refusal
+from graph_context import compact_subgraph, last_user_text
+from receipts import consume_force_local, latest_hop, write_hop, write_refusal_if_real
+from refusal import classify_refusal, is_refusal
 from responses_bridge import compress_responses_for_local, responses_to_sse, wrap_chat_as_response
 from shorthand import compress_for_local
+
+ROOT = Path(__file__).resolve().parent
 
 
 def _load_env(path: Path) -> None:
@@ -70,9 +74,76 @@ async def startup() -> None:
     print(f"  mlx:              {MLX_URL}")
 
 
+def _excerpt_body(body: dict | None) -> str:
+    if not isinstance(body, dict):
+        return ""
+    err = body.get("error")
+    if isinstance(err, dict):
+        return str(err.get("message") or err)[:500]
+    if isinstance(body.get("content"), list):
+        return "".join(
+            str(b.get("text") or "") for b in body["content"] if isinstance(b, dict)
+        )[:500]
+    choices = body.get("choices")
+    if isinstance(choices, list) and choices and isinstance(choices[0], dict):
+        msg = choices[0].get("message") or {}
+        c = msg.get("content")
+        return (c if isinstance(c, str) else str(c or ""))[:500]
+    return str(body.get("status") or "")[:200]
+
+
+def _graph_injected(body: dict) -> bool:
+    text = compact_subgraph(ROOT / "graphify-out" / "graph.json", last_user_text(body))
+    return bool(text)
+
+
+def _record(
+    *,
+    via: str,
+    reason: str,
+    route: str,
+    or_status: int | None,
+    err: BaseException | None,
+    or_body: dict | None = None,
+    local_body: dict | None = None,
+    graph_injected: bool = False,
+) -> dict:
+    or_excerpt = _excerpt_body(or_body)
+    if not or_excerpt and err is not None:
+        or_excerpt = str(err)[:500]
+    hop = write_hop(
+        ROOT,
+        via=via,
+        reason=reason,
+        route=route,
+        or_status=or_status,
+        err=type(err).__name__ if err else None,
+        usage=(or_body or {}).get("usage") if isinstance(or_body, dict) else {},
+        or_excerpt=or_excerpt,
+        local_excerpt=_excerpt_body(local_body) if via == "local" else "",
+        graph_injected=graph_injected,
+    )
+    write_refusal_if_real(ROOT, hop)
+    return hop
+
+
 @app.get("/health")
 async def health():
-    return {"status": "ok", "openrouter_model": OPENROUTER_MODEL, "local_model": LOCAL_MODEL}
+    return {
+        "status": "ok",
+        "openrouter_model": OPENROUTER_MODEL,
+        "local_model": LOCAL_MODEL,
+        "force_local": (ROOT / ".force-local").is_file(),
+        "graph": (ROOT / "graphify-out" / "graph.json").is_file(),
+    }
+
+
+@app.get("/v1/receipts/latest")
+async def receipts_latest():
+    rec = latest_hop(ROOT)
+    if rec is None:
+        return JSONResponse({"error": "no hops yet"}, status_code=404)
+    return rec
 
 
 @app.get("/v1/responses")
@@ -177,14 +248,46 @@ async def messages(request: Request):
 
     oai = to_openai_chat(body, model=OPENROUTER_MODEL)
     oai["max_tokens"] = min(int(oai.get("max_tokens") or 4096), 8192)
-    status, or_body, err = await _openrouter_chat(oai)
-    fallback = is_refusal(status, or_body, err, text_heuristic=TEXT_HEURISTIC)
-    via = "local" if fallback else "openrouter"
-    print(f"hop via={via} or_status={status} err={type(err).__name__ if err else None}")
+    injected = _graph_injected(body)
 
-    if fallback:
+    if consume_force_local(ROOT):
+        print("hop via=local reason=force-local")
+        _record(
+            via="local",
+            reason="force-local",
+            route="/v1/messages",
+            or_status=None,
+            err=None,
+            graph_injected=injected,
+        )
         return await _local_anthropic(body, stream=stream)
 
+    status, or_body, err = await _openrouter_chat(oai)
+    reason = classify_refusal(status, or_body, err, text_heuristic=TEXT_HEURISTIC)
+    via = "local" if reason else "openrouter"
+    print(f"hop via={via} reason={reason or 'ok'} or_status={status} err={type(err).__name__ if err else None}")
+
+    if reason:
+        _record(
+            via="local",
+            reason=reason,
+            route="/v1/messages",
+            or_status=status,
+            err=err,
+            or_body=or_body if isinstance(or_body, dict) else None,
+            graph_injected=injected,
+        )
+        return await _local_anthropic(body, stream=stream)
+
+    _record(
+        via="openrouter",
+        reason="ok",
+        route="/v1/messages",
+        or_status=status,
+        err=None,
+        or_body=or_body if isinstance(or_body, dict) else None,
+        graph_injected=False,
+    )
     msg = openai_chat_to_anthropic(or_body or {}, model=OPENROUTER_MODEL)
     if stream:
         return Response(content=anthropic_to_sse(msg), media_type="text/event-stream")
@@ -271,19 +374,121 @@ async def responses(request: Request):
             tool_names.append(str(tool.get("name") or tool.get("type") or "?"))
     print(f"responses tools n={len(tool_names)} names={tool_names[:40]}")
 
-    status, or_body, err = await _openrouter_responses(body)
-    fallback = is_refusal(status, or_body, err, text_heuristic=TEXT_HEURISTIC)
-    if isinstance(or_body, dict) and or_body.get("status") in {"failed", "cancelled"}:
-        fallback = True
-    via = "local" if fallback else "openrouter"
-    print(f"responses hop via={via} or_status={status} err={type(err).__name__ if err else None}")
-
-    if fallback:
+    injected = _graph_injected(body)
+    if consume_force_local(ROOT):
+        print("responses hop via=local reason=force-local")
+        _record(
+            via="local",
+            reason="force-local",
+            route="/v1/responses",
+            or_status=None,
+            err=None,
+            graph_injected=injected,
+        )
         return await _local_responses(body, stream=stream)
 
+    status, or_body, err = await _openrouter_responses(body)
+    reason = classify_refusal(status, or_body, err, text_heuristic=TEXT_HEURISTIC)
+    via = "local" if reason else "openrouter"
+    print(f"responses hop via={via} reason={reason or 'ok'} or_status={status} err={type(err).__name__ if err else None}")
+
+    if reason:
+        _record(
+            via="local",
+            reason=reason,
+            route="/v1/responses",
+            or_status=status,
+            err=err,
+            or_body=or_body if isinstance(or_body, dict) else None,
+            graph_injected=injected,
+        )
+        return await _local_responses(body, stream=stream)
+
+    _record(
+        via="openrouter",
+        reason="ok",
+        route="/v1/responses",
+        or_status=status,
+        err=None,
+        or_body=or_body if isinstance(or_body, dict) else None,
+    )
     if stream:
         return Response(content=responses_to_sse(or_body or {}), media_type="text/event-stream")
     return JSONResponse(or_body or {})
+
+
+@app.post("/v1/doctor/receipt")
+async def doctor_receipt():
+    """Live tape: OpenRouter ping, then a real closed-port R1, then mlx if up."""
+    _require_config()
+    ping = {
+        "model": OPENROUTER_MODEL,
+        "messages": [{"role": "user", "content": "Say the word ping."}],
+        "max_tokens": 16,
+    }
+    status, or_body, err = await _openrouter_chat(ping)
+    reason_a = classify_refusal(status, or_body, err, text_heuristic=TEXT_HEURISTIC)
+    _record(
+        via="local" if reason_a else "openrouter",
+        reason=reason_a or "ok",
+        route="/v1/doctor/receipt",
+        or_status=status,
+        err=err,
+        or_body=or_body if isinstance(or_body, dict) else None,
+        local_body=None,
+    )
+
+    closed_err: BaseException | None = None
+    try:
+        async with httpx.AsyncClient(timeout=2) as client:
+            await client.post("http://127.0.0.1:9/v1/chat/completions", json={"n": 1})
+    except BaseException as exc:
+        closed_err = exc
+    reason_b = classify_refusal(None, None, closed_err) or "R1"
+
+    local_ok = False
+    local_body: dict | None = None
+    mlx_err: BaseException | None = None
+    try:
+        async with httpx.AsyncClient(timeout=180) as client:
+            resp = await client.post(
+                f"{MLX_URL}/v1/messages",
+                json={
+                    "model": LOCAL_MODEL,
+                    "max_tokens": 16,
+                    "messages": [{"role": "user", "content": "Say the word pong."}],
+                },
+                headers={"content-type": "application/json", "x-api-key": "local-secret"},
+            )
+            try:
+                local_body = resp.json()
+            except Exception:
+                local_body = {"error": {"message": resp.text[:400]}}
+            local_ok = resp.status_code < 400 and isinstance(local_body, dict) and local_body.get("type") != "error"
+    except BaseException as exc:
+        mlx_err = exc
+        local_body = {"error": {"message": str(exc)[:400]}}
+
+    _record(
+        via="local",
+        reason=reason_b,
+        route="/v1/doctor/receipt",
+        or_status=None,
+        err=closed_err,
+        or_body={"error": {"message": str(closed_err)[:400] if closed_err else "closed-port unexpected success"}},
+        local_body=local_body if isinstance(local_body, dict) else None,
+    )
+    return {
+        "hop_a": {"via": "local" if reason_a else "openrouter", "reason": reason_a or "ok", "or_status": status},
+        "hop_b": {
+            "reason": reason_b,
+            "closed_port_error": type(closed_err).__name__ if closed_err else None,
+            "local_ok": local_ok,
+            "mlx_error": type(mlx_err).__name__ if mlx_err else None,
+            "local_excerpt": _excerpt_body(local_body if isinstance(local_body, dict) else None),
+        },
+        "latest": latest_hop(ROOT),
+    }
 
 
 if __name__ == "__main__":

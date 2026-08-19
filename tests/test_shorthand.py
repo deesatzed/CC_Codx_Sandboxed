@@ -18,7 +18,7 @@ def test_replaces_system_and_collapses_tools():
     }
     out = compress_for_local(body, local_model="/abs/model")
     assert out["model"] == "/abs/model"
-    assert len(str(out.get("system", ""))) < 2000
+    assert len(str(out.get("system", ""))) < 4000
     assert out["system"] != body["system"]
     assert "coding agent" in str(out.get("system", "")).lower()
     tool = out["tools"][0]

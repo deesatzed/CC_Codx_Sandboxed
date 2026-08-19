@@ -4,6 +4,12 @@ This folder is OS-sandboxed. Stay inside this directory (including `repoShowP1/`
 
 You have a local shell (`exec` / `shell_command`) and `apply_patch`. Use them for file work. Do not spawn sub-agents. Do not use web search to inspect this folder.
 
+If `graphify-out/graph.json` exists, **query the graph before grep/find** (`graphify query`, `graphify path`, `graphify explain`). Raw file reads are for the files the graph pointed at.
+
+`$local` / `/local` pins the **next** hybrid-router hop to Abliterated 4bit (writes `.force-local`).
+
+Hop receipts: `receipts/hops.jsonl`. Dual-host log: `witness.jsonl`.
+
 Model traffic goes to `127.0.0.1:4000` (hybrid router): OpenRouter `deepseek/deepseek-v4-pro-0813` first; refusals go to local Abliterated Qwen 3.8 27B 4bit.
 
 Custom prompts were copied from `~/.claude/commands` into `$CODEX_HOME/prompts`. In Codex they are **`$name`**, not `/name`. Examples: `$build`, `$discovery`, `$legacy-interview`.

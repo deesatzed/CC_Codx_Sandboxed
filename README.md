@@ -31,6 +31,18 @@ Then the four terminals in **Run** below. `./check-codex.sh` is the offline Code
 
 Do not copy `.env` or `.codex-home/` between machines (keys and session logs).
 
+## Receipts (the five)
+
+| Command / file | What it proves |
+|---|---|
+| `./doctor-receipt.sh` | OpenRouter hop + real closed-port R1 + mlx if `:8080` is up. Also `receipts/hops.jsonl` |
+| `./prove-sandbox.sh` | Workdir write ok, parent write denied; `/tmp` and Hugging Face reported as they actually are |
+| `graphify-out/graph.json` | If present, local shorthand injects a compact subgraph; agents query the graph before grep |
+| `witness.jsonl` | Claude/Codex session start + tool hooks |
+| `/local` or `$local` | Next hop is Abliterated 4bit (`reason=force-local`) |
+
+Restart `./run-router.sh` after pulling so `/v1/doctor/receipt` exists.
+
 ## Run (after `./setup.sh` and `./check.sh`)
 
 Hybrid (fast path). After `.env` has your OpenRouter key and `OPENROUTER_MODEL=deepseek/deepseek-v4-pro-0813`:

@@ -77,6 +77,11 @@ if [[ -d "$USER_COMMANDS" ]]; then
 else
   echo "Note: ${USER_COMMANDS} not found; slash commands will be empty."
 fi
+mkdir -p "$PROJECT_COMMANDS"
+if [[ -f "${SCRIPT_DIR}/slash/local.md" ]]; then
+  cp "${SCRIPT_DIR}/slash/local.md" "${PROJECT_COMMANDS}/local.md"
+fi
+(cd "$SCRIPT_DIR" && "$VENV_PY" -c "from witness import append_witness; append_witness(host='claude', event='session_start', path='.')") || true
 
 echo
 echo "Local brain: ${LOCAL_MODEL}"

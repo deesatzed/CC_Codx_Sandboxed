@@ -1,3 +1,7 @@
+## local
+
+`/local` writes `.force-local`. The next hybrid-router hop skips OpenRouter.
+
 ## graphify
 
 This project has a knowledge graph at graphify-out/ with god nodes, community structure, and cross-file relationships.

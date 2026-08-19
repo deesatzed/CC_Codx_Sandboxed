@@ -3,7 +3,12 @@ from __future__ import annotations
 
 import json
 import time
+from pathlib import Path
 from typing import Any
+
+from graph_context import compact_subgraph, last_user_text
+
+_ROOT = Path(__file__).resolve().parent
 
 _STUB = (
     "You are a local coding agent on this Mac. Prefer small file reads. "
@@ -14,11 +19,10 @@ _STUB = (
 def compress_responses_for_local(body: dict[str, Any], *, local_model: str) -> dict[str, Any]:
     out = dict(body)
     out["model"] = local_model
-    inst = body.get("instructions")
-    if isinstance(inst, str) and inst:
-        out["instructions"] = _STUB
-    elif inst:
-        out["instructions"] = _STUB
+    graph = compact_subgraph(_ROOT / "graphify-out" / "graph.json", last_user_text(body))
+    inst = _STUB + (("\n\n" + graph) if graph else "")
+    if body.get("instructions"):
+        out["instructions"] = inst
     inp = body.get("input")
     if isinstance(inp, str) and len(inp) > 8000:
         out["input"] = inp[:4000] + "\n\n[truncated]\n\n" + inp[-4000:]

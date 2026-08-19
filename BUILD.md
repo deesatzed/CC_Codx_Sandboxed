@@ -73,9 +73,19 @@ Terminal 2:
 ./run-claude.sh
 ```
 
-Then: ask Claude to create a file in this directory (must work) and to write `/tmp/sandbox-should-fail.txt` (must be denied).
+Then: `./prove-sandbox.sh` (workdir write must pass; parent write must fail). Do not assume `/tmp` is denied — default Safehouse often allows it; the script reports the truth.
 
-## 7. Fallback only if step 6 cannot talk Anthropic
+## 7. Receipts (router must be running; restart router after this pull)
+
+```bash
+./doctor-receipt.sh
+```
+
+Pass: hop B `reason=R1` with a real closed-port error. Local mlx `local_ok` only if `./run-mlx.sh` is up.
+
+`/local` or `$local` writes `.force-local` for the next hop.
+
+## 8. Fallback only if step 6 cannot talk Anthropic
 
 Terminal extra: `./run-proxy.sh`  
 Then: `USE_PROXY=1 ./run-claude.sh`
